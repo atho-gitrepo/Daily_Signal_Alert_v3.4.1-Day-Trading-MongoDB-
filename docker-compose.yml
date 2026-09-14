@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: trading-bot-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: trading_bot
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - trading-bot-network
+
+  trading-bot:
+    build: .
+    container_name: trading-bot
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=production
+      - RUN_MODE=PRODUCTION
+      - BINANCE_API_KEY=${BINANCE_API_KEY}
+      - BINANCE_API_SECRET=${BINANCE_API_SECRET}
+      - BINANCE_USE_TESTNET=false
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_ENABLED=${GROQ_ENABLED:-true}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - GROQ_TEMPERATURE=${GROQ_TEMPERATURE:-0.3}
+      - SYMBOLS=BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT
+      - TIMEFRAME=5m
+      - HTF_TIMEFRAME=1h
+      - LOG_LEVEL=INFO
+      # MongoDB Configuration
+      - MONGODB_HOST=mongodb
+      - MONGODB_PORT=27017
+      - MONGODB_DB=trading_bot
+      - MONGODB_ACTIVE_COLLECTION=active_signals
+      - MONGODB_RESOLVED_COLLECTION=resolved_signals
+      - MONGODB_ARCHIVE_COLLECTION=archive_signals
+      - MONGODB_MAX_POOL_SIZE=50
+      - MONGODB_MIN_POOL_SIZE=5
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    networks:
+      - trading-bot-network
+
+volumes:
+  mongodb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./mongodb_data
+  mongodb_config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./mongodb_config
+
+networks:
+  trading-bot-network:
+    driver: bridge
